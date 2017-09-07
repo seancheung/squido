@@ -1,0 +1,30 @@
+{
+  "name": "squido",
+  "version": "0.1.0",
+  "description": "CLI for database migration/seeding, cache management, and some more!",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/seancheung/squido.git"
+  },
+  "keywords": [
+    "migration",
+    "seeding",
+    "mysql",
+    "sequelize",
+    "database",
+    "redis",
+    "cache",
+    "cli"
+  ],
+  "author": "Sean Cheung",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/seancheung/squido/issues"
+  },
+  "homepage": "https://github.com/seancheung/squido#readme",
+  "dependencies": {}
+}
