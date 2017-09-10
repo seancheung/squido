@@ -1,0 +1,476 @@
+#!/usr/bin/env node
+/*eslint no-console: off */
+const program = require('commander');
+const chalk = require('chalk');
+const Promise = require('bluebird');
+const path = require('path');
+const fs = require('fs');
+
+program
+    .version('0.1.0')
+    .option(
+        '-c, --config <configuration path>',
+        'set json/js configuration file path'
+    )
+    .option('-i, --dialect <dialect>', 'set diaelect', 'mysql')
+    .option('-D, --database <database>', 'set database')
+    .option('-S, --storage <storage>', 'set storage')
+    .option('-H, --host <host>', 'set host', 'localhost')
+    .option('-P, --port <port>', 'set port', 3306)
+    .option('-u, --username <username>', 'set username')
+    .option('-p, --password <password>', 'set password')
+    .option('--models <models path>', 'set models path to import')
+    .option('--attach', 'do not quit on command complete')
+    .option('-w, --workdir <dir>', 'change work directory');
+
+program
+    .command('make [type]')
+    .description('generate modules')
+    .option('-d, --dir <directory>', 'module files directory', './setup')
+    .action(env)
+    .action(make);
+
+program
+    .command('migrate')
+    .description('run migrations')
+    .option(
+        '-d, --dir <directory>',
+        'migration files directory',
+        './setup/migrations'
+    )
+    .option('--rollback [step]', 'rollback migrations')
+    .option(
+        '--step [step]',
+        'how many migrations of the latest to run or rollback'
+    )
+    .action(env)
+    .action(migrate);
+
+program
+    .command('seed')
+    .description('run seeders')
+    .option(
+        '-d, --dir <directory>',
+        'seeder files directory',
+        './setup/seeders'
+    )
+    .option('--rollback [step]', 'rollback seeders')
+    .option(
+        '--step [step]',
+        'how many seeders of the latest to run or rollback'
+    )
+    .action(env)
+    .action(seed);
+
+program
+    .command('install')
+    .description('run migrations and seeders')
+    .option(
+        '-m, --migrations <directory>',
+        'migration files directory',
+        './setup/migrations'
+    )
+    .option(
+        '-s, --seeders <directory>',
+        'seeder files directory',
+        './setup/seeders'
+    )
+    .action(env)
+    .action(install);
+
+program
+    .command('uninstall')
+    .description('rollback migrations and seeders')
+    .action(env)
+    .action(uninstall);
+
+program
+    .command('reset')
+    .description('drop all tables then run migrations and seeders')
+    .option(
+        '-m, --migrations <directory>',
+        'migration files directory',
+        './setup/migrations'
+    )
+    .option(
+        '-s, --seeders <directory>',
+        'seeder files directory',
+        './setup/seeders'
+    )
+    .option('-y, --yes', 'no confirmation prompt')
+    .action(env)
+    .action(reset);
+
+program.parse(process.argv);
+
+function danger(err) {
+    console.log(chalk.red(require('util').inspect(err)));
+}
+
+function env() {
+    if (program.wrokdir) {
+        process.chdir(program.wrokdir);
+        console.log(
+            chalk.yellow(
+                `workdir is ${chalk.bold(chalk.blue(program.wrokdir))}`
+            )
+        );
+    }
+}
+
+function confirm(options) {
+    if (options && options.yes) {
+        return Promise.resolve(true);
+    }
+    const inquirer = require('inquirer');
+
+    return inquirer
+        .prompt([
+            {
+                type: 'confirm',
+                name: 'hint',
+                default: false,
+                message: 'This operation is dangerous. Continue?'
+            }
+        ])
+        .then(answer => {
+            return answer.hint;
+        });
+}
+
+function init() {
+    const Sequelize = require('sequelize');
+    let config;
+    if (program.config) {
+        let file = program.config;
+        if (!path.isAbsolute(file)) {
+            file = path.join(process.cwd(), file);
+        }
+        config = require(file);
+    } else {
+        config = {
+            dialect: program.dialect,
+            host: program.host,
+            port: program.port,
+            username: program.username,
+            password: program.password,
+            database: program.database,
+            storage: program.storage
+        };
+    }
+    const db = new Sequelize(config);
+
+    return db;
+}
+
+function make(type, options) {
+    const ask = type => {
+        if (!type) {
+            const inquirer = require('inquirer');
+
+            return inquirer
+                .prompt([
+                    {
+                        type: 'list',
+                        name: 'type',
+                        message: 'what type of module do you want to generate?',
+                        choices: ['seeder', 'migration']
+                    }
+                ])
+                .then(choice => {
+                    return choice.type;
+                });
+        }
+
+        return Promise.resolve(type);
+    };
+
+    return ask(type).then(type => {
+        const prettier = require('prettier');
+        const moment = require('moment');
+        let dir = options.dir;
+        if (!path.isAbsolute(dir)) {
+            dir = path.join(process.cwd(), dir);
+        }
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir);
+        }
+        switch (type) {
+        case 'seeder': {
+            const code =
+                    'module.exports={\nrun(options, db){},\nrollback(options, db){}}';
+            dir = path.join(dir, 'seeders');
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir);
+            }
+            fs.writeFileSync(
+                path.join(dir, `${moment().format('YYYYMMDDhhmmss')}.js`),
+                prettier.format(code, { tabWidth: 4 })
+            );
+            console.log(chalk.green('complete'));
+            break;
+        }
+        case 'migration': {
+            const code =
+                    'module.exports={\nrun(options, db){},\nrollback(options, db){}}';
+            dir = path.join(dir, 'migrations');
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir);
+            }
+            fs.writeFileSync(
+                path.join(dir, `${moment().format('YYYYMMDDhhmmss')}.js`),
+                prettier.format(code, { tabWidth: 4 })
+            );
+            console.log(chalk.green('complete'));
+            break;
+        }
+        default:
+            console.error(chalk.red(`unsupported type: ${type}`));
+            break;
+        }
+    });
+}
+
+function run(dir, table, options) {
+    const db = init();
+
+    const model = db.define(
+        table,
+        {
+            name: {
+                type: db.Sequelize.STRING(14),
+                allowNull: false,
+                primaryKey: true
+            },
+            date: {
+                type: db.Sequelize.DATE(6),
+                allowNull: false
+            },
+            file: {
+                type: db.Sequelize.STRING,
+                allowNull: false
+            }
+        },
+        { timestamps: false, freezeTableName: true }
+    );
+
+    return db
+        .authenticate()
+        .then(() => model.sync())
+        .then(() => {
+            if (options.rollback) {
+                return db.transaction(transaction => {
+                    const condition = {
+                        transaction,
+                        order: [['date', 'DESC']]
+                    };
+                    if (/^\+?(0|[1-9]\d*)$/.test(options.rollback)) {
+                        condition.limit = Number(options.rollback);
+                    } else if (/^\+?(0|[1-9]\d*)$/.test(options.step)) {
+                        condition.limit = Number(options.step);
+                    }
+
+                    return model.findAll(condition).then(records => {
+                        return Promise.mapSeries(
+                            records.sort((a, b) => a.date < b.date),
+                            record => {
+                                const mod = require(record.file);
+                                console.log(
+                                    chalk.yellow(
+                                        `rollbacking ${chalk.bold(record.file)}`
+                                    )
+                                );
+
+                                return mod
+                                    .rollback({ transaction }, db)
+                                    .then(() =>
+                                        record.destroy({ transaction })
+                                    );
+                            }
+                        );
+                    });
+                });
+            }
+
+            const load = function(dir) {
+                if (!path.isAbsolute(dir)) {
+                    dir = path.join(process.cwd(), dir);
+                }
+
+                return fs
+                    .readdirSync(dir)
+                    .filter(f => /.js$/.test(f))
+                    .map(f => path.join(dir, f));
+            };
+
+            return db.transaction(transaction => {
+                return model
+                    .findAll({
+                        attributes: ['name'],
+                        transaction
+                    })
+                    .then(records => {
+                        const files = load(dir).sort();
+                        let step;
+                        if (/^\+?(0|[1-9]\d*)$/.test(options.step)) {
+                            step = Number(options.step);
+                        }
+
+                        return Promise.mapSeries(files, file => {
+                            const name = path.basename(
+                                file,
+                                path.extname(file)
+                            );
+                            if (records.some(record => record.name == name)) {
+                                return;
+                            }
+                            if (step === 0) {
+                                return;
+                            }
+                            const mod = require(file);
+                            console.log(
+                                chalk.yellow(`running ${chalk.bold(file)}`)
+                            );
+
+                            return mod
+                                .run({ transaction }, db)
+                                .then(() =>
+                                    model.create(
+                                        {
+                                            name,
+                                            date: Date.now(),
+                                            file
+                                        },
+                                        { transaction }
+                                    )
+                                )
+                                .then(() => {
+                                    if (step > 0) {
+                                        step--;
+                                    }
+                                });
+                        });
+                    });
+            });
+        })
+        .then(() => {
+            console.log(chalk.green('complete'));
+            if (!options.attach) {
+                process.exit(0);
+            }
+        })
+        .catch(err => {
+            danger(err);
+            if (!options.attach) {
+                process.exit(1);
+            }
+        });
+}
+
+function migrate(options) {
+    return run(options.dir, '__migrations__', options);
+}
+
+function seed(options) {
+    return run(options.dir, '__seeders__', options);
+}
+
+function install(options) {
+    return migrate({ dir: options.migrations, attach: true })
+        .then(() => seed({ dir: options.seeders, attach: true }))
+        .then(() => {
+            console.log(chalk.green('complete'));
+            process.exit(0);
+        })
+        .catch(err => {
+            danger(err);
+            process.exit(1);
+        });
+}
+
+function uninstall() {
+    return drop({ all: true, yes: true, attach: true })
+        .then(() => {
+            console.log(chalk.green('complete'));
+            process.exit(0);
+        })
+        .catch(err => {
+            danger(err);
+            process.exit(1);
+        });
+}
+
+function drop(options) {
+    return confirm(options)
+        .then(yes => {
+            if (yes) {
+                const db = init();
+
+                return db.authenticate().then(() => {
+                    let promise;
+                    if (options.all) {
+                        promise = () => db.drop();
+                    } else if (options && options.model) {
+                        const models = options.model
+                            .split(',')
+                            .map(name => db.model(name));
+                        promise = () =>
+                            Promise.mapSeries(models, model => model.drop());
+                    } else {
+                        return Promise.resolve();
+                    }
+
+                    if (options.safe) {
+                        return promise().then(() =>
+                            db.query(
+                                'drop table if exists __migrations__, __seeders__'
+                            )
+                        );
+                    }
+
+                    return db
+                        .query('SET FOREIGN_KEY_CHECKS = 0')
+                        .then(promise)
+                        .then(() =>
+                            db.query(
+                                'drop table if exists __migrations__, __seeders__'
+                            )
+                        )
+                        .then(() => db.query('SET FOREIGN_KEY_CHECKS = 1'));
+                });
+            }
+        })
+        .then(() => {
+            console.log(chalk.green('complete'));
+            if (!options.attach) {
+                process.exit(0);
+            }
+        })
+        .catch(err => {
+            danger(err);
+            if (!options.attach) {
+                process.exit(1);
+            }
+        });
+}
+
+function reset(options) {
+    return confirm(options)
+        .then(yes => {
+            if (yes) {
+                return drop({ all: true, yes: true, attach: true })
+                    .then(() =>
+                        migrate({ dir: options.migrations, attach: true })
+                    )
+                    .then(() => seed({ dir: options.seeders, attach: true }));
+            }
+        })
+        .then(() => {
+            console.log(chalk.green('complete'));
+            process.exit(0);
+        })
+        .catch(err => {
+            danger(err);
+            process.exit(1);
+        });
+}
